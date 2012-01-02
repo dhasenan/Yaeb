@@ -21,7 +21,6 @@ namespace Events
 			{
 				foreach (var topic in Topics)
 				{
-					Console.WriteLine ("firing topic {0}", topic);
 					Broker.Fire (topic);
 				}
 			}
@@ -50,7 +49,6 @@ namespace Events
 			{
 				subs = _subscriptions [topic] = new List<Subscription> ();
 			}
-			Console.WriteLine ("added subscription for {0}, method {1} on type {2}", topic, method, o.GetType ());
 			subs.Add (new Subscription{Method = method, Target = new WeakReference (o)});
 		}
 		
@@ -67,13 +65,6 @@ namespace Events
 			var pub = new Publication {Topics = topics, Broker = this};
 			var dg = Delegate.CreateDelegate (typeof(Action), pub, _pubmethod);
 			evt.AddEventHandler (o, dg);
-			var str = "";
-			foreach (var s in topics)
-			{
-				str += s;
-				str += ",";
-			}
-			Console.WriteLine ("added publishers for [{0}], event {1} on type {2}", str, evt, o.GetType ());
 		}
 		
 		public void Register (object o)
@@ -103,29 +94,53 @@ namespace Events
 						p [i] = attr.Topic;
 						i++;
 					}
-					AddPublisher(p, o, evt);
+					AddPublisher (p, o, evt);
 				}
 			}
 		}
 		
 		public void Fire (string name)
 		{
+			bool needToClean = false;
 			List<Subscription > subs;
 			if (_subscriptions.TryGetValue (name, out subs))
 			{
-				Console.WriteLine ("found {0} subscribers", subs.Count);
 				foreach (var sub in subs)
 				{
 					var target = sub.Target.Target;
-					if (target != null)
+					if (target == null)
 					{
-						Console.WriteLine ("target: {0} method target type: {1}", target, sub.Method.DeclaringType);
-						sub.Method.Invoke (target, new object[0]);
+						needToClean = true;
 					}
 					else
 					{
-						Console.WriteLine ("sorry, the princess is in another castle!");
+						sub.Method.Invoke (target, new object[0]);
 					}
+				}
+			}
+			if (needToClean)
+			{
+				Clean (subs);
+			}
+		}
+		
+		private void Clean (List<Subscription> subs)
+		{
+			int i = 0;
+			while (i < subs.Count)
+			{
+				if (subs [i].Target.IsAlive)
+				{
+					i++;
+				}
+				else
+				{
+					// it's efficient to slice off the end of the list
+					// but not to remove inside the list
+					// so we bring in the last item to this location, don't advance
+					// position, and slice off the end of the list
+					subs [i] = subs [subs.Count - 1];
+					subs.RemoveAt (subs.Count - 1);
 				}
 			}
 		}
